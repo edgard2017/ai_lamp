@@ -13,6 +13,9 @@ venv/
 # Runtime data (calibration baselines, sqlite db, captured frames)
 data/
 
+# Generated audio (TTS output, ASR probe files) — artifacts, not source
+outputs/
+
 # Editor / OS
 .DS_Store
 .vscode/

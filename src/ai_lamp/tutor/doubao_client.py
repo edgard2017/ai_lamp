@@ -41,6 +41,7 @@ class DoubaoClient:
         base_url: Optional[str] = None,
         timeout: float = 60.0,
         max_retries: int = 2,
+        deep_thinking: bool = False,
     ) -> None:
         # 项目启动时自动读取 .env（若存在）；已 export 的真实环境变量优先，不被覆盖
         load_env()
@@ -49,6 +50,9 @@ class DoubaoClient:
         self.base_url = base_url or os.environ.get("ARK_BASE_URL", _DEFAULT_BASE_URL)
         self.timeout = timeout
         self.max_retries = max_retries
+        # 默认关掉「深度思考」：seed 系模型默认会先长篇推理（慢一倍），
+        # 台灯场景要的是快。需要更高准确度时再 deep_thinking=True 打开。
+        self._extra_body = {} if deep_thinking else {"thinking": {"type": "disabled"}}
 
         if not self.api_key:
             raise DoubaoConfigError(
@@ -74,27 +78,33 @@ class DoubaoClient:
         image_path: Optional[str] = None,
         system: Optional[str] = None,
         temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
     ) -> str:
         """发一条消息，返回模型回复文本。
 
         text       用户消息（如题目描述或引导指令）
         image_path 可选，作业照片路径；提供则走多模态（接入点需支持视觉）
         system     可选，系统提示（设定角色/语气，如"循循善诱的小学辅导老师"）
+        max_tokens 可选，限制回复长度
         """
-        content: object
-        if image_path:
-            content = [
-                {"type": "text", "text": text},
-                {"type": "image_url", "image_url": {"url": _encode_image(image_path)}},
-            ]
-        else:
-            content = text
-
         messages: List[dict] = []
         if system:
             messages.append({"role": "system", "content": system})
-        messages.append({"role": "user", "content": content})
+        messages.append(user_message(text, image_path))
+        return self.chat(messages, temperature=temperature, max_tokens=max_tokens)
 
+    def chat(
+        self,
+        messages: List[dict],
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+    ) -> str:
+        """多轮对话：传入完整消息历史，返回模型回复文本。
+
+        模型本身无状态——"记忆"靠调用方维护这份 messages 列表：每轮把用户新话和
+        模型回复依次 append 进去，再整份递进来。第一条可含 system，图片放在首条
+        user 消息里即可（见 user_message）。
+        """
         last_exc: Optional[Exception] = None
         for attempt in range(self.max_retries + 1):
             try:
@@ -102,6 +112,8 @@ class DoubaoClient:
                     model=self.model,
                     messages=messages,
                     temperature=temperature,
+                    max_tokens=max_tokens,
+                    extra_body=self._extra_body,
                 )
                 return (resp.choices[0].message.content or "").strip()
             except Exception as exc:  # noqa: BLE001 - 统一重试，最后再抛
@@ -109,6 +121,18 @@ class DoubaoClient:
                 if attempt < self.max_retries:
                     time.sleep(1.5 * (attempt + 1))
         raise RuntimeError(f"调用豆包失败（重试 {self.max_retries} 次后）：{last_exc}")
+
+
+def user_message(text: str, image_path: Optional[str] = None) -> dict:
+    """构造一条 user 消息。给了 image_path 就走多模态（文本 + 图片 data URL）。"""
+    if image_path:
+        content: object = [
+            {"type": "text", "text": text},
+            {"type": "image_url", "image_url": {"url": _encode_image(image_path)}},
+        ]
+    else:
+        content = text
+    return {"role": "user", "content": content}
 
 
 def _encode_image(path: str) -> str:
