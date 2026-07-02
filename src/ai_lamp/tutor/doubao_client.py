@@ -22,6 +22,8 @@ import os
 import time
 from typing import List, Optional
 
+from ..env import load_env
+
 _DEFAULT_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
 
 
@@ -40,6 +42,8 @@ class DoubaoClient:
         timeout: float = 60.0,
         max_retries: int = 2,
     ) -> None:
+        # 项目启动时自动读取 .env（若存在）；已 export 的真实环境变量优先，不被覆盖
+        load_env()
         self.api_key = api_key or os.environ.get("ARK_API_KEY")
         self.model = model or os.environ.get("ARK_MODEL")
         self.base_url = base_url or os.environ.get("ARK_BASE_URL", _DEFAULT_BASE_URL)

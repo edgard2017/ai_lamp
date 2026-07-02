@@ -6,6 +6,10 @@ __pycache__/
 venv/
 .pytest_cache/
 
+# Secrets — real key lives here, NEVER commit it
+.env
+.env.local
+
 # Runtime data (calibration baselines, sqlite db, captured frames)
 data/
 
