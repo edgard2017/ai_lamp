@@ -1,0 +1,26 @@
+# 坐姿判定参数（调参不动代码）
+# 全部相对于个性化标定基准，不是绝对角度。
+
+judgment:
+  # 离得太近：当前肩宽 / 基准肩宽 超过该比值即提醒（1.20 = 近 20%）
+  proximity_ratio: 1.20
+  # 低头：neck_vertical 跌到基准的该倍数以下即提醒
+  head_drop_ratio: 0.75
+  # 歪斜：|当前肩斜 - 基准肩斜| 超过该值即提醒
+  shoulder_tilt_delta: 0.12
+
+estimator:
+  # 关键点可见度低于该值则视为缺失
+  min_visibility: 0.5
+  # MediaPipe Pose 模型复杂度：0=最快(Pi 友好) 1=均衡 2=最准
+  model_complexity: 1
+
+monitor:
+  # 问题需连续保持多少秒才第一次提醒（滤掉一闪而过）
+  persistence_s: 3.0
+  # 同一类问题两次提醒的最小间隔秒数（防唠叨）
+  cooldown_s: 30.0
+
+calibration:
+  # 标定采集多少帧取平均
+  frames: 30

@@ -1,0 +1,10 @@
+# --- Runtime (on the Raspberry Pi / any machine with a camera) ---
+mediapipe>=0.10        # pose estimation (33 keypoints), runs on the Pi
+opencv-python>=4.8     # camera capture + drawing
+PyYAML>=6.0            # load config/posture.yaml
+
+# --- Note ---
+# The pure geometry layer (src/ai_lamp/vision/posture_rules.py, monitor.py,
+# calibration.py) and the unit tests depend on NOTHING above — they run on the
+# Python standard library alone. That is deliberate: the *algorithm* stays
+# testable on the dev server (no webcam), the *IO* lives behind these deps.
