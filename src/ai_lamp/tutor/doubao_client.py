@@ -1,7 +1,7 @@
 """豆包（火山引擎·方舟，OpenAI 兼容）客户端封装。
 
-模型在字节云端运行；本模块只发 HTTPS 请求、收结果。任何能联网跑 Python 的机器
-（开发服务器 / 树莓派，x86 / ARM 都行）都能用。
+模型在字节云端运行；本模块只用 requests 发 HTTPS 请求、收结果，**不依赖 openai SDK**。
+任何能联网跑 Python 的机器（开发服务器 / 树莓派，x86 / ARM、老 Python 3.7 都行）都能用。
 
 鉴权与配置一律从**环境变量**读，绝不硬编码、绝不入库：
   ARK_API_KEY   你的火山引擎 API Key（机密！只在终端 export，别贴进聊天/代码）
@@ -64,13 +64,9 @@ class DoubaoClient:
                 "缺少 ARK_MODEL（推理接入点 id）。请执行： export ARK_MODEL=ep-xxxx"
             )
 
-        from openai import OpenAI  # 懒加载，未用到豆包时无需装 SDK
-
-        self._client = OpenAI(
-            api_key=self.api_key,
-            base_url=self.base_url,
-            timeout=timeout,
-        )
+        # 走 requests 直连 ARK 的 OpenAI 兼容 REST 接口，不依赖 openai SDK，
+        # 这样老 Python（3.7）和树莓派上零额外依赖即可运行。
+        self._chat_url = self.base_url.rstrip("/") + "/chat/completions"
 
     def ask(
         self,
@@ -105,21 +101,47 @@ class DoubaoClient:
         模型回复依次 append 进去，再整份递进来。第一条可含 system，图片放在首条
         user 消息里即可（见 user_message）。
         """
+        import requests  # 延迟导入，避免无网/未装依赖时影响其它模块
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        payload: dict = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+        }
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
+        payload.update(self._extra_body)  # 如 thinking:disabled 合并进请求体
+
         last_exc: Optional[Exception] = None
         for attempt in range(self.max_retries + 1):
             try:
-                resp = self._client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    extra_body=self._extra_body,
+                resp = requests.post(
+                    self._chat_url, headers=headers, json=payload, timeout=self.timeout
                 )
-                return (resp.choices[0].message.content or "").strip()
-            except Exception as exc:  # noqa: BLE001 - 统一重试，最后再抛
+            except Exception as exc:  # noqa: BLE001 - 网络层错误可重试
                 last_exc = exc
                 if attempt < self.max_retries:
                     time.sleep(1.5 * (attempt + 1))
+                continue
+
+            if resp.status_code == 200:
+                data = resp.json()
+                return (data["choices"][0]["message"]["content"] or "").strip()
+
+            # 4xx（鉴权/参数/模型不存在）重试无益，直接抛出便于定位
+            if 400 <= resp.status_code < 500:
+                raise RuntimeError(
+                    f"豆包请求被拒 HTTP {resp.status_code}: {resp.text[:300]}"
+                )
+
+            # 5xx 等服务端错误，可重试
+            last_exc = RuntimeError(f"HTTP {resp.status_code}: {resp.text[:200]}")
+            if attempt < self.max_retries:
+                time.sleep(1.5 * (attempt + 1))
         raise RuntimeError(f"调用豆包失败（重试 {self.max_retries} 次后）：{last_exc}")
 
 

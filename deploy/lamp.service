@@ -1,0 +1,29 @@
+# 台灯后台守护进程的 systemd 服务单元。
+#
+# 安装到树莓派（在 Pi 上执行，或从 4090 远程装）：
+#   sudo cp ~/ai_lamp/deploy/lamp.service /etc/systemd/system/lamp.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now lamp      # 开机自启 + 立即启动
+#   journalctl -u lamp -f                 # 看实时日志
+#
+# 喂一句话测试（会触发豆包引导 + TTS 合成）：
+#   echo "妈妈这道题我不会" > ~/ai_lamp/runtime/ask.fifo
+
+[Unit]
+Description=AI Lamp daemon (Doubao tutoring + TTS)
+# 需要联网调云端，等网络就绪再起
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/ai_lamp
+ExecStart=/usr/bin/python3 /home/pi/ai_lamp/apps/lamp_daemon.py
+# 崩溃自动重启，防止偶发网络/异常把台灯搞哑
+Restart=on-failure
+RestartSec=3
+# 老 Pi 时钟可能不准（无 RTC），这里不强依赖；时间同步建议另配 systemd-timesyncd
+
+[Install]
+WantedBy=multi-user.target
