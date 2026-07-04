@@ -60,11 +60,17 @@ def main() -> int:
     print(f"照片：{photo}")
 
     # 2) 发给豆包多模态判断坐姿
+    # 坐姿是"粗活"（驼背/低头/太近），用小模型(flash)又快又省，不必上贵的 pro。
+    # 复用 .env 里的 ARK_GRADER_MODEL；没配则回退默认 ARK_MODEL。
+    from ai_lamp.env import load_env
+    load_env()
+    posture_model = os.environ.get("ARK_GRADER_MODEL") or None
     try:
-        client = DoubaoClient()
+        client = DoubaoClient(model=posture_model)
     except DoubaoConfigError as exc:
         print(f"配置错误：{exc}")
         return 2
+    print(f"坐姿模型：{client.model}")
 
     t0 = time.time()
     reply = client.ask("请判断这张照片里孩子的坐姿。", image_path=photo,
